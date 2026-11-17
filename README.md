@@ -91,6 +91,6 @@ Re-run `./deploy.sh` afterwards so the service picks up the new values.
 
 ```bash
 npm install
-cp .env.example .env   # fill in your values
+cp .env.example .env   # fill in your values; MCP_BEARER_TOKEN from `openssl rand -hex 32`
 npm run dev            # http://127.0.0.1:7993/mcp
 ```

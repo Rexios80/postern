@@ -7,8 +7,9 @@ SMTP_HOST="${SMTP_HOST:-}"
 SMTP_PORT="${SMTP_PORT:-587}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-postern}"
+DIR="$(dirname "$0")"
 
-PROJECT_FILE="$(dirname "$0")/.project-$SERVICE"
+PROJECT_FILE="$DIR/.project-$SERVICE"
 PROJECT_ID="${PROJECT_ID:-$(cat "$PROJECT_FILE" 2>/dev/null || echo "$SERVICE-$(openssl rand -hex 3)")}"
 gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1 || gcloud projects create "$PROJECT_ID" --quiet
 echo "$PROJECT_ID" > "$PROJECT_FILE"
@@ -47,7 +48,7 @@ for secret in "$SERVICE-mail-password" "$SERVICE-token"; do
     --role roles/secretmanager.secretAccessor "${G[@]}" >/dev/null
 done
 
-gcloud run deploy "$SERVICE" --source "$(dirname "$0")" --region "$REGION" \
+gcloud run deploy "$SERVICE" --source "$DIR" --region "$REGION" \
   --service-account "$SA" --allow-unauthenticated --max-instances 1 --memory 1Gi \
   --set-secrets "MAIL_PASSWORD=$SERVICE-mail-password:latest,MCP_BEARER_TOKEN=$SERVICE-token:latest" \
   --set-env-vars "IMAP_HOST=$IMAP_HOST,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,MAIL_USERNAME=$MAIL_USERNAME" \
