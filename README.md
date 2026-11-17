@@ -12,9 +12,9 @@ bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP ove
 | --- | --- |
 | `list_mailboxes` | Lists folders |
 | `search_messages` | Searches a folder by sender, recipient, subject, text, date or unread status |
-| `get_message` | Reads one message as plain text and lists its attachments |
+| `get_message` | Reads one message as plain text, including its Reply-To address, and lists its attachments |
 | `get_attachment` | Downloads an attachment: images as images, text as text, other files as base64 |
-| `send_email` | Sends plain-text mail and replies, with attachments and an optional alias or display name. Only available when `SMTP_HOST` is set |
+| `send_email` | Sends plain-text mail, with attachments and an optional alias or display name. Replies reference the original email, and Postern adds the threading headers and "Re:" subject. Only available when `SMTP_HOST` is set |
 
 Attachments can be new files or attachments of existing emails, which are forwarded without passing through the bot. Messages over 40 MB can't be read, and requests are limited to 25 MB (about 18 MB of new attachments). Most providers only let you send from addresses the account owns.
 

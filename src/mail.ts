@@ -117,6 +117,7 @@ export function getMessage(config: MailConfig, mailbox: string, uid: number) {
       from: formatParsed(parsed.from),
       to: formatParsed(parsed.to),
       cc: formatParsed(parsed.cc),
+      replyTo: formatParsed(parsed.replyTo),
       subject: parsed.subject ?? "",
       text: text.slice(0, MAX_TEXT_CHARS),
       textTruncated: text.length > MAX_TEXT_CHARS,
@@ -130,7 +131,25 @@ export function getMessage(config: MailConfig, mailbox: string, uid: number) {
   });
 }
 
-export type AttachmentRef = { mailbox: string; uid: number; index: number };
+export type MessageRef = { mailbox: string; uid: number };
+export type AttachmentRef = MessageRef & { index: number };
+
+const MESSAGE_ID = /^<[^<>\s]+>$/;
+
+function getThread(config: MailConfig, { mailbox, uid }: MessageRef) {
+  return withMailbox(config, mailbox, async (client) => {
+    const msg = await client.fetchOne(String(uid), { envelope: true, headers: ["references"] }, { uid: true });
+    if (!msg || !msg.envelope) throw new Error(`No message with UID ${uid} in ${mailbox}`);
+    const messageId = msg.envelope.messageId ?? "";
+    const subject = msg.envelope.subject ?? "";
+    const references = [...(msg.headers?.toString().match(/<[^<>\s]+>/g) ?? []), messageId];
+    return {
+      messageId: MESSAGE_ID.test(messageId) ? messageId : undefined,
+      references: references.filter((id) => MESSAGE_ID.test(id)),
+      subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+    };
+  });
+}
 
 export function getAttachment(config: MailConfig, { mailbox, uid, index }: AttachmentRef) {
   return withMailbox(config, mailbox, async (client) => {
@@ -151,13 +170,17 @@ export type SendParams = {
   fromName?: string;
   to: string[];
   cc?: string[];
-  subject: string;
+  subject?: string;
   text: string;
-  inReplyTo?: string;
+  inReplyTo?: MessageRef;
   attachments?: (NewAttachment | AttachmentRef)[];
 };
 
 export async function sendEmail(config: MailConfig, params: SendParams) {
+  const thread = params.inReplyTo && (await getThread(config, params.inReplyTo));
+  const subject = params.subject ?? thread?.subject;
+  if (!subject) throw new Error("subject is required unless replying");
+
   const attachments = [];
   for (const a of params.attachments ?? []) {
     attachments.push(
@@ -180,10 +203,10 @@ export async function sendEmail(config: MailConfig, params: SendParams) {
       from: { name: params.fromName ?? "", address: params.from ?? config.username },
       to: params.to,
       cc: params.cc,
-      subject: params.subject,
+      subject,
       text: params.text,
-      inReplyTo: params.inReplyTo,
-      references: params.inReplyTo,
+      inReplyTo: thread?.messageId,
+      references: thread?.references,
       attachments,
       disableFileAccess: true,
       disableUrlAccess: true,
