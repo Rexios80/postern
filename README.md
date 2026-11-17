@@ -1,10 +1,8 @@
 # Postern
 
-A small, self-hosted [MCP](https://modelcontextprotocol.io) server that gives Grok Bot (or any MCP client) email access over HTTPS. Use it when the bot's VM can't open IMAP/SMTP ports.
+A small, self-hosted [MCP](https://modelcontextprotocol.io) server that gives Grok Bot (or any MCP client) access to your email when the bot can't connect to mail servers directly.
 
-```
-bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP over TLS──▶ your mail provider
-```
+Postern runs on Google Cloud Run. The bot sends it requests over HTTPS with a secret token, and Postern signs in to your mail provider to read and send email on the bot's behalf.
 
 ## Tools
 
