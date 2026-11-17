@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-die() { echo "error: $*" >&2; exit 1; }
-
 : "${IMAP_HOST:?set IMAP_HOST, e.g. imap.mail.me.com (see README)}"
 : "${MAIL_USERNAME:?set MAIL_USERNAME, usually your full email address}"
 SMTP_HOST="${SMTP_HOST:-}"
 SMTP_PORT="${SMTP_PORT:-587}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
-[[ -n "$PROJECT_ID" ]] || die "set PROJECT_ID or run: gcloud config set project <id>"
+: "${PROJECT_ID:?set PROJECT_ID or run: gcloud config set project <id>}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-postern}"
 
