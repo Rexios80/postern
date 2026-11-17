@@ -7,12 +7,10 @@ die() { echo "error: $*" >&2; exit 1; }
 : "${MAIL_USERNAME:?set MAIL_USERNAME, usually your full email address}"
 SMTP_HOST="${SMTP_HOST:-}"
 SMTP_PORT="${SMTP_PORT:-587}"
-ALLOWED_RECIPIENTS="${ALLOWED_RECIPIENTS:-}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 [[ -n "$PROJECT_ID" ]] || die "set PROJECT_ID or run: gcloud config set project <id>"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-postern}"
-[[ "$IMAP_HOST$SMTP_HOST$MAIL_USERNAME$ALLOWED_RECIPIENTS" != *"|"* ]] || die "settings cannot contain |"
 
 SA="${SERVICE}@${PROJECT_ID}.iam.gserviceaccount.com"
 G=(--project "$PROJECT_ID" --quiet)
@@ -39,7 +37,7 @@ done
 gcloud run deploy "$SERVICE" --source "$(dirname "$0")" --region "$REGION" \
   --service-account "$SA" --allow-unauthenticated --max-instances 1 \
   --set-secrets "MAIL_PASSWORD=$SERVICE-mail-password:latest,MCP_BEARER_TOKEN=$SERVICE-token:latest" \
-  --set-env-vars "^|^IMAP_HOST=$IMAP_HOST|SMTP_HOST=$SMTP_HOST|SMTP_PORT=$SMTP_PORT|MAIL_USERNAME=$MAIL_USERNAME|ALLOWED_RECIPIENTS=$ALLOWED_RECIPIENTS" \
+  --set-env-vars "IMAP_HOST=$IMAP_HOST,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,MAIL_USERNAME=$MAIL_USERNAME" \
   "${G[@]}"
 
 URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)' "${G[@]}")"

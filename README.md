@@ -20,7 +20,7 @@ bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP ove
 - The mail password stays in Google Secret Manager. Bots only get a revocable 256-bit bearer token, and every request without it is rejected.
 - Folders are opened read-only: reading never marks messages as read, moves or deletes anything.
 - The mail servers are fixed at deploy time, and connections require TLS 1.2+ with certificate checks.
-- `ALLOWED_RECIPIENTS` restricts who the bot can email, so instructions hidden in an incoming email can't make it write to strangers. Set it if you enable sending.
+- Sending is only enabled when `SMTP_HOST` is set. A bot that can read and send can be tricked by a malicious email into forwarding your mail, so leave it out unless the bot needs to send.
 - The service runs as its own service account, which can read only its two secrets, in a distroless non-root container with at most one instance.
 
 ## Providers
@@ -42,11 +42,11 @@ You need a Google Cloud project with billing enabled, the `gcloud` CLI (signed i
 
 ```bash
 PROJECT_ID=my-project IMAP_HOST=imap.mail.me.com SMTP_HOST=smtp.mail.me.com \
-MAIL_USERNAME=you@icloud.com ALLOWED_RECIPIENTS="me@example.com,@mycompany.com" \
+MAIL_USERNAME=you@icloud.com \
 ./deploy.sh
 ```
 
-The first run asks for the app password. Leave out `SMTP_HOST` for read-only access. `ALLOWED_RECIPIENTS` takes addresses and `@domains`; leave it out to allow anyone. Re-run the same command to apply changes.
+The first run asks for the app password. Leave out `SMTP_HOST` for read-only access. Re-run the same command to apply changes.
 
 To serve another mailbox, deploy again with a different `SERVICE` name (default `postern`).
 

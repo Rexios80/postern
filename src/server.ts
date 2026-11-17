@@ -20,10 +20,6 @@ const config: MailConfig = {
 };
 const bearerToken = env("MCP_BEARER_TOKEN");
 if (bearerToken.length < 32) throw new Error("MCP_BEARER_TOKEN must be at least 32 characters");
-const allowedRecipients = (process.env.ALLOWED_RECIPIENTS ?? "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest();
 const tokenDigest = sha256(bearerToken);
@@ -31,15 +27,6 @@ const tokenDigest = sha256(bearerToken);
 function isAuthorized(req: IncomingMessage): boolean {
   const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "");
   return !!match && timingSafeEqual(sha256(match[1]), tokenDigest);
-}
-
-function isRecipientAllowed(address: string): boolean {
-  const lower = address.toLowerCase();
-  return (
-    allowedRecipients.length === 0 ||
-    allowedRecipients.includes(lower) ||
-    allowedRecipients.includes(lower.slice(lower.lastIndexOf("@")))
-  );
 }
 
 const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] });
@@ -86,11 +73,10 @@ function buildMcpServer(): McpServer {
   );
 
   if (config.smtpHost) {
-    const restriction = allowedRecipients.length ? ` Allowed recipients: ${allowedRecipients.join(", ")}.` : "";
     server.registerTool(
       "send_email",
       {
-        description: `Send a plain-text email as ${config.username}. To reply, pass the original messageId as inReplyTo.${restriction}`,
+        description: `Send a plain-text email as ${config.username}. To reply, pass the original messageId as inReplyTo.`,
         inputSchema: {
           to: z.array(z.email()).min(1).max(20),
           cc: z.array(z.email()).max(20).optional(),
@@ -100,13 +86,7 @@ function buildMcpServer(): McpServer {
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
-      async (args) => {
-        const blocked = [...args.to, ...(args.cc ?? [])].filter((r) => !isRecipientAllowed(r));
-        if (blocked.length > 0) {
-          return { isError: true, content: [{ type: "text", text: `Recipients not allowed: ${blocked.join(", ")}` }] };
-        }
-        return json(await sendEmail(config, args));
-      },
+      async (args) => json(await sendEmail(config, args)),
     );
   }
 
