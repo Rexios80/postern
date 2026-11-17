@@ -76,7 +76,7 @@ function buildMcpServer(): McpServer {
       inputSchema: messageRef,
       annotations: readOnly,
     },
-    async ({ mailbox, uid }) => json(await getMessage(config, mailbox, uid)),
+    async (ref) => json(await getMessage(config, ref)),
   );
 
   server.registerTool(
@@ -104,7 +104,7 @@ function buildMcpServer(): McpServer {
     server.registerTool(
       "send_email",
       {
-        description: `Send a plain-text email, from ${config.username} unless from is set. To reply, set inReplyTo to the original email and send to its replyTo address if it has one, otherwise its from address; threading headers and a "Re:" subject are added automatically. Each attachment is either a new file (filename, content, encoding) or an attachment of an existing email (mailbox, uid, index), which forwards it without downloading.`,
+        description: `Send a plain-text email from ${config.username} (or from). To reply, set inReplyTo and send to the original's replyTo, else its from; threading headers and a "Re:" subject are added. An attachment is either a new file (filename, content, encoding) or one from an existing email (mailbox, uid, index), forwarded without downloading.`,
         inputSchema: {
           from: z.email().optional().describe("Another address this account can send as, such as an alias"),
           fromName: singleLine.max(100).optional().describe("Display name for the sender"),

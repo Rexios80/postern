@@ -10,7 +10,11 @@ export type MailConfig = {
   password: string;
 };
 
+export type MessageRef = { mailbox: string; uid: number };
+export type AttachmentRef = MessageRef & { index: number };
+
 const TLS = { minVersion: "TLSv1.2", rejectUnauthorized: true } as const;
+const MESSAGE_ID = /^<[^<>\s]+>$/;
 
 type Address = { name?: string; address?: string };
 
@@ -107,12 +111,11 @@ async function readMessage(client: ImapFlow, mailbox: string, uid: number) {
   return simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
 }
 
-export function getMessage(config: MailConfig, mailbox: string, uid: number) {
+export function getMessage(config: MailConfig, { mailbox, uid }: MessageRef) {
   return withMailbox(config, mailbox, async (client) => {
     const parsed = await readMessage(client, mailbox, uid);
     const text = parsed.text ?? "";
     return {
-      messageId: parsed.messageId ?? null,
       date: parsed.date ?? null,
       from: formatParsed(parsed.from),
       to: formatParsed(parsed.to),
@@ -130,11 +133,6 @@ export function getMessage(config: MailConfig, mailbox: string, uid: number) {
     };
   });
 }
-
-export type MessageRef = { mailbox: string; uid: number };
-export type AttachmentRef = MessageRef & { index: number };
-
-const MESSAGE_ID = /^<[^<>\s]+>$/;
 
 function getThread(config: MailConfig, { mailbox, uid }: MessageRef) {
   return withMailbox(config, mailbox, async (client) => {
