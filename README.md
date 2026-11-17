@@ -89,7 +89,7 @@ openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add postern-token --
 read -rs p && printf '%s' "$p" | gcloud secrets versions add postern-mail-password --data-file=- --project $P
 ```
 
-Re-run `./deploy.sh` afterwards so the service picks up the new values.
+Then re-run your deploy command, with the same variables, so the service picks up the new values.
 
 ## Run locally
 
