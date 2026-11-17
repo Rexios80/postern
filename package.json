@@ -2,6 +2,7 @@
   "name": "postern",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Secure, self-hosted MCP server that gives Grok Bot IMAP/SMTP email access over HTTPS",
   "type": "module",
   "engines": {
