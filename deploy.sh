@@ -5,13 +5,28 @@ set -euo pipefail
 : "${MAIL_USERNAME:?set MAIL_USERNAME, usually your full email address}"
 SMTP_HOST="${SMTP_HOST:-}"
 SMTP_PORT="${SMTP_PORT:-587}"
-PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
-: "${PROJECT_ID:?set PROJECT_ID or run: gcloud config set project <id>}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-postern}"
 
+PROJECT_FILE="$(dirname "$0")/.project-$SERVICE"
+PROJECT_ID="${PROJECT_ID:-$(cat "$PROJECT_FILE" 2>/dev/null || echo "$SERVICE-$(openssl rand -hex 3)")}"
+gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1 || gcloud projects create "$PROJECT_ID" --quiet
+echo "$PROJECT_ID" > "$PROJECT_FILE"
+
 SA="${SERVICE}@${PROJECT_ID}.iam.gserviceaccount.com"
 G=(--project "$PROJECT_ID" --quiet)
+
+if [[ "$(gcloud billing projects describe "$PROJECT_ID" --format 'value(billingEnabled)')" != True ]]; then
+  if [[ -z "${BILLING_ACCOUNT:-}" ]]; then
+    accounts="$(gcloud billing accounts list --filter open=true --format 'value(name.basename())')"
+    case "$(grep -c . <<<"$accounts" || true)" in
+      0) echo "Create a billing account at https://console.cloud.google.com/billing, then re-run." >&2; exit 1 ;;
+      1) BILLING_ACCOUNT="$accounts" ;;
+      *) gcloud billing accounts list --filter open=true; read -rp "Billing account ID: " BILLING_ACCOUNT ;;
+    esac
+  fi
+  gcloud billing projects link "$PROJECT_ID" --billing-account "$BILLING_ACCOUNT" >/dev/null
+fi
 
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com "${G[@]}"
@@ -41,6 +56,7 @@ gcloud run deploy "$SERVICE" --source "$(dirname "$0")" --region "$REGION" \
 URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)' "${G[@]}")"
 cat <<EOF
 
+Project: $PROJECT_ID
 MCP endpoint: $URL/mcp
 Copy the token into your bot's secrets:
   gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID \\

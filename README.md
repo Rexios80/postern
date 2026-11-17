@@ -25,8 +25,8 @@ Attachments can be new files or attachments of existing emails, which are forwar
 - The mail servers are fixed at deploy time, and connections require TLS 1.2+ with certificate checks.
 - Sending is only enabled when `SMTP_HOST` is set. A bot that can read and send can be tricked by a malicious email into forwarding your mail, so leave it out unless the bot needs to send.
 - Attachments can only come from the request itself or from emails in the mailbox. Postern never reads files or URLs.
-- Every sent email is logged with its sender, recipients, attachment count and Message-ID. Review them with `gcloud run services logs read postern --region us-central1`.
-- The service runs as its own service account, which can read only its two secrets, in a distroless non-root container with at most one instance.
+- Every sent email is logged with its sender, recipients, attachment count and Message-ID. Review them with `gcloud run services logs read postern --region us-central1 --project $(cat .project-postern)`.
+- Each deployment gets its own Google Cloud project, so nothing else shares access to its secrets. The service runs as its own service account, which can read only its two secrets, in a distroless non-root container with at most one instance.
 
 ## Providers
 
@@ -43,15 +43,15 @@ Outlook.com and Microsoft 365 aren't supported, because they no longer allow pas
 
 ## Deploy to Google Cloud Run
 
-You need a Google Cloud project with billing enabled, the `gcloud` CLI (signed in), and `openssl`.
+You need the [`gcloud` CLI](https://cloud.google.com/sdk/docs/install), signed in with `gcloud auth login`, and a Google Cloud [billing account](https://console.cloud.google.com/billing). Usage at personal scale normally stays within the free tier.
 
 ```bash
-PROJECT_ID=my-project IMAP_HOST=imap.mail.me.com SMTP_HOST=smtp.mail.me.com \
-MAIL_USERNAME=you@icloud.com \
-./deploy.sh
+IMAP_HOST=imap.mail.me.com SMTP_HOST=smtp.mail.me.com MAIL_USERNAME=you@icloud.com ./deploy.sh
 ```
 
-The first run asks for the app password. Leave out `SMTP_HOST` for read-only access. Re-run the same command to apply changes.
+The first run creates a dedicated Google Cloud project, links your billing account (it asks which one if you have several), and asks for the app password. The project ID is saved in `.project-postern`, so re-running the same command updates the same deployment. Leave out `SMTP_HOST` for read-only access.
+
+To use an existing project instead, set `PROJECT_ID`. To remove everything, delete the project with `gcloud projects delete $(cat .project-postern)`.
 
 To serve another mailbox, deploy again with a different `SERVICE` name (default `postern`).
 
@@ -76,11 +76,13 @@ Other MCP clients: use Streamable HTTP at `/mcp` with an `Authorization: Bearer 
 ## Rotate credentials
 
 ```bash
+P=$(cat .project-postern)
+
 # New bot token, then update the bot's secret
-openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add postern-token --data-file=-
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add postern-token --data-file=- --project $P
 
 # New mail password
-read -rs p && printf '%s' "$p" | gcloud secrets versions add postern-mail-password --data-file=-
+read -rs p && printf '%s' "$p" | gcloud secrets versions add postern-mail-password --data-file=- --project $P
 ```
 
 Re-run `./deploy.sh` afterwards so the service picks up the new values.
