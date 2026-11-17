@@ -57,10 +57,10 @@ To serve another mailbox, deploy again with a different `SERVICE` name (default 
 
 ## Connect Grok Bot
 
-Copy the token to your clipboard:
+Copy the header value (`Bearer ` plus the token) to your clipboard:
 
 ```bash
-gcloud secrets versions access latest --secret postern-token --project $(cat .project-postern) | pbcopy
+{ printf 'Bearer '; gcloud secrets versions access latest --secret postern-token --project $(cat .project-postern); } | pbcopy
 ```
 
 In the Grok Bot app, open **Connect apps**, choose **Add a custom connector**, and fill in:
@@ -70,7 +70,7 @@ In the Grok Bot app, open **Connect apps**, choose **Add a custom connector**, a
 | Name | `Postern` |
 | Type | Remote HTTPS |
 | Server URL | the MCP endpoint `deploy.sh` prints, ending in `/mcp` |
-| HTTP headers | Key `Authorization`, value `Bearer ` followed by the token |
+| HTTP headers | Key `Authorization`, value pasted from the clipboard |
 | Client ID | leave empty |
 
 Click **Add plugin**, then type `@` in a bot's chat to attach Postern. Don't paste the token into the chat.

@@ -62,7 +62,7 @@ cat <<EOF
 
 Project: $PROJECT_ID
 MCP endpoint: $URL/mcp
-Add a Remote HTTPS custom connector with that Server URL and the HTTP header
-Authorization = Bearer <token> (see README). Copy the token with:
-  gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID | pbcopy
+Add a Remote HTTPS custom connector with that Server URL and an Authorization
+header (see README). Copy the header value with:
+  { printf 'Bearer '; gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID; } | pbcopy
 EOF
