@@ -21,6 +21,7 @@ bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP ove
 - Folders are opened read-only: reading never marks messages as read, moves or deletes anything.
 - The mail servers are fixed at deploy time, and connections require TLS 1.2+ with certificate checks.
 - Sending is only enabled when `SMTP_HOST` is set. A bot that can read and send can be tricked by a malicious email into forwarding your mail, so leave it out unless the bot needs to send.
+- Every sent email is logged with its recipients and Message-ID. Review them with `gcloud run services logs read postern --region us-central1`.
 - The service runs as its own service account, which can read only its two secrets, in a distroless non-root container with at most one instance.
 
 ## Providers

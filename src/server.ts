@@ -86,7 +86,11 @@ function buildMcpServer(): McpServer {
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
-      async (args) => json(await sendEmail(config, args)),
+      async (args) => {
+        const result = await sendEmail(config, args);
+        console.log(JSON.stringify({ message: "email sent", to: args.to, cc: args.cc ?? [], messageId: result.messageId }));
+        return json(result);
+      },
     );
   }
 
