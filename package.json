@@ -10,8 +10,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

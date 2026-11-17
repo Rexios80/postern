@@ -2,63 +2,58 @@ import { ImapFlow, type SearchObject } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
 import nodemailer from "nodemailer";
 
-const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
-
 export type MailConfig = {
   imapHost: string;
-  imapPort: number;
   smtpHost: string;
   smtpPort: number;
   username: string;
   password: string;
-  from: string;
 };
 
-type EnvelopeAddress = { name?: string; address?: string };
+const TLS = { minVersion: "TLSv1.2", rejectUnauthorized: true } as const;
 
-function formatAddresses(list?: EnvelopeAddress[]): string[] {
-  return (list ?? []).map((a) => (a.name ? `${a.name} <${a.address ?? ""}>` : (a.address ?? "")));
+type Address = { name?: string; address?: string };
+
+function formatAddresses(list: Address[] = []): string[] {
+  return list.map((a) => (a.name ? `${a.name} <${a.address ?? ""}>` : (a.address ?? "")));
 }
 
-function formatParsedAddresses(value?: AddressObject | AddressObject[]): string[] {
-  const objects = Array.isArray(value) ? value : value ? [value] : [];
-  return objects.flatMap((o) => formatAddresses(o.value));
+function formatParsed(value?: AddressObject | AddressObject[]): string[] {
+  return [value ?? []].flat().flatMap((o) => formatAddresses(o.value));
 }
 
-async function withImap<T>(config: MailConfig, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+async function withMailbox<T>(config: MailConfig, mailbox: string | null, fn: (client: ImapFlow) => Promise<T>) {
   const client = new ImapFlow({
     host: config.imapHost,
-    port: config.imapPort,
+    port: 993,
     secure: true,
     auth: { user: config.username, pass: config.password },
-    tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+    tls: TLS,
     logger: false,
     disableAutoIdle: true,
-    socketTimeout: 60_000,
   });
   try {
     await client.connect();
-    return await fn(client);
+    if (!mailbox) return await fn(client);
+    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
+    try {
+      return await fn(client);
+    } finally {
+      lock.release();
+    }
   } catch (err) {
-    throw describeImapError(err);
+    const e = err as { authenticationFailed?: boolean; responseText?: string };
+    if (e.authenticationFailed) throw new Error("The mail server rejected the login");
+    throw e.responseText ? new Error(`IMAP error: ${e.responseText}`) : err;
   } finally {
     await client.logout().catch(() => client.close());
   }
 }
 
-function describeImapError(err: unknown): Error {
-  const e = err as { authenticationFailed?: boolean; responseText?: string; message?: string };
-  if (e.authenticationFailed) {
-    return new Error("The mail server rejected the login: check MAIL_USERNAME and MAIL_PASSWORD");
-  }
-  return new Error(e.responseText ? `IMAP error: ${e.responseText}` : (e.message ?? String(err)));
-}
-
-export async function listMailboxes(config: MailConfig) {
-  return withImap(config, async (client) => {
-    const boxes = await client.list();
-    return boxes.map((b) => ({ path: b.path, specialUse: b.specialUse ?? null }));
-  });
+export function listMailboxes(config: MailConfig) {
+  return withMailbox(config, null, async (client) =>
+    (await client.list()).map((b) => ({ path: b.path, specialUse: b.specialUse ?? null })),
+  );
 }
 
 export type SearchParams = {
@@ -69,99 +64,59 @@ export type SearchParams = {
   text?: string;
   since?: string;
   before?: string;
-  unreadOnly?: boolean;
+  unreadOnly: boolean;
   limit: number;
 };
 
-export async function searchMessages(config: MailConfig, params: SearchParams) {
-  return withImap(config, async (client) => {
-    const lock = await client.getMailboxLock(params.mailbox, { readOnly: true });
-    try {
-      const query: SearchObject = {};
-      if (params.from) query.from = params.from;
-      if (params.to) query.to = params.to;
-      if (params.subject) query.subject = params.subject;
-      if (params.text) query.text = params.text;
-      if (params.since) query.since = params.since;
-      if (params.before) query.before = params.before;
-      if (params.unreadOnly) query.seen = false;
-      if (Object.keys(query).length === 0) query.all = true;
+export function searchMessages(config: MailConfig, { mailbox, unreadOnly, limit, ...filters }: SearchParams) {
+  return withMailbox(config, mailbox, async (client) => {
+    const query: SearchObject = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+    if (unreadOnly) query.seen = false;
+    if (Object.keys(query).length === 0) query.all = true;
 
-      const uids = (await client.search(query, { uid: true })) || [];
-      const newest = uids.sort((a, b) => a - b).slice(-params.limit);
-      const messages = [];
-      if (newest.length > 0) {
-        for await (const msg of client.fetch(
-          newest.join(","),
-          { uid: true, envelope: true, flags: true, internalDate: true, size: true },
-          { uid: true },
-        )) {
-          messages.push({
-            uid: msg.uid,
-            date: (msg.envelope?.date ?? msg.internalDate)?.toString() ?? null,
-            from: formatAddresses(msg.envelope?.from),
-            to: formatAddresses(msg.envelope?.to),
-            subject: msg.envelope?.subject ?? "",
-            unread: !msg.flags?.has("\\Seen"),
-            flagged: msg.flags?.has("\\Flagged") ?? false,
-            sizeBytes: msg.size ?? null,
-          });
-        }
-      }
-      messages.sort((a, b) => b.uid - a.uid);
-      return { mailbox: params.mailbox, totalMatches: uids.length, messages };
-    } finally {
-      lock.release();
-    }
+    const uids = (await client.search(query, { uid: true })) || [];
+    const newest = uids.sort((a, b) => a - b).slice(-limit);
+    if (newest.length === 0) return { totalMatches: 0, messages: [] };
+
+    const fetched = await client.fetchAll(newest.join(","), { envelope: true, flags: true }, { uid: true });
+    const messages = fetched
+      .map((m) => ({
+        uid: m.uid,
+        date: m.envelope?.date ?? null,
+        from: formatAddresses(m.envelope?.from),
+        to: formatAddresses(m.envelope?.to),
+        subject: m.envelope?.subject ?? "",
+        unread: !m.flags?.has("\\Seen"),
+      }))
+      .sort((a, b) => b.uid - a.uid);
+    return { totalMatches: uids.length, messages };
   });
 }
 
-export async function getMessage(config: MailConfig, mailbox: string, uid: number, maxChars: number) {
-  return withImap(config, async (client) => {
-    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
-    try {
-      const msg = await client.fetchOne(
-        String(uid),
-        { uid: true, source: { maxLength: MAX_SOURCE_BYTES } },
-        { uid: true },
-      );
-      if (!msg || !msg.source) throw new Error(`No message with UID ${uid} in ${mailbox}`);
+const MAX_TEXT_CHARS = 20_000;
 
-      const parsed = await simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
-      const text = parsed.text ?? "";
-      return {
-        mailbox,
-        uid,
-        messageId: parsed.messageId ?? null,
-        inReplyTo: parsed.inReplyTo ?? null,
-        date: parsed.date?.toISOString() ?? null,
-        from: formatParsedAddresses(parsed.from),
-        to: formatParsedAddresses(parsed.to),
-        cc: formatParsedAddresses(parsed.cc),
-        replyTo: formatParsedAddresses(parsed.replyTo),
-        subject: parsed.subject ?? "",
-        text: text.slice(0, maxChars),
-        textTruncated: text.length > maxChars,
-        attachments: parsed.attachments.map((a) => ({
-          filename: a.filename ?? null,
-          contentType: a.contentType,
-          sizeBytes: a.size,
-        })),
-      };
-    } finally {
-      lock.release();
-    }
+export function getMessage(config: MailConfig, mailbox: string, uid: number) {
+  return withMailbox(config, mailbox, async (client) => {
+    const msg = await client.fetchOne(String(uid), { source: { maxLength: 10 * 1024 * 1024 } }, { uid: true });
+    if (!msg || !msg.source) throw new Error(`No message with UID ${uid} in ${mailbox}`);
+
+    const parsed = await simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
+    const text = parsed.text ?? "";
+    return {
+      messageId: parsed.messageId ?? null,
+      date: parsed.date ?? null,
+      from: formatParsed(parsed.from),
+      to: formatParsed(parsed.to),
+      cc: formatParsed(parsed.cc),
+      subject: parsed.subject ?? "",
+      text: text.slice(0, MAX_TEXT_CHARS),
+      textTruncated: text.length > MAX_TEXT_CHARS,
+      attachments: parsed.attachments.map((a) => ({ filename: a.filename ?? null, sizeBytes: a.size })),
+    };
   });
 }
 
-export type SendParams = {
-  to: string[];
-  cc?: string[];
-  bcc?: string[];
-  subject: string;
-  text: string;
-  inReplyTo?: string;
-};
+export type SendParams = { to: string[]; cc?: string[]; subject: string; text: string; inReplyTo?: string };
 
 export async function sendEmail(config: MailConfig, params: SendParams) {
   const transport = nodemailer.createTransport({
@@ -170,19 +125,12 @@ export async function sendEmail(config: MailConfig, params: SendParams) {
     secure: config.smtpPort === 465,
     requireTLS: true,
     auth: { user: config.username, pass: config.password },
-    tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
-    connectionTimeout: 30_000,
-    socketTimeout: 60_000,
+    tls: TLS,
   });
   try {
     const info = await transport.sendMail({
-      from: config.from,
-      to: params.to,
-      cc: params.cc,
-      bcc: params.bcc,
-      subject: params.subject,
-      text: params.text,
-      inReplyTo: params.inReplyTo,
+      from: config.username,
+      ...params,
       references: params.inReplyTo,
     });
     return { messageId: info.messageId, accepted: info.accepted, rejected: info.rejected };
