@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import * as z from "zod";
-import { getMessage, listMailboxes, searchMessages, sendEmail, type Credentials } from "./mail.js";
+import { getMessage, listMailboxes, searchMessages, sendEmail, type MailConfig } from "./mail.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const UNTRUSTED_NOTICE =
@@ -18,9 +18,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const creds: Credentials = {
-  email: requireEnv("ICLOUD_EMAIL"),
-  password: requireEnv("ICLOUD_APP_PASSWORD"),
+const username = requireEnv("MAIL_USERNAME");
+const config: MailConfig = {
+  imapHost: requireEnv("IMAP_HOST"),
+  imapPort: Number(process.env.IMAP_PORT || 993),
+  smtpHost: process.env.SMTP_HOST?.trim() ?? "",
+  smtpPort: Number(process.env.SMTP_PORT || 587),
+  username,
+  password: requireEnv("MAIL_PASSWORD"),
+  from: process.env.MAIL_FROM?.trim() || username,
 };
 const bearerToken = requireEnv("MCP_BEARER_TOKEN");
 if (bearerToken.length < 32) {
@@ -28,6 +34,10 @@ if (bearerToken.length < 32) {
   process.exit(1);
 }
 const enableSend = process.env.ENABLE_SEND === "true";
+if (enableSend && !config.smtpHost) {
+  console.error("SMTP_HOST is required when ENABLE_SEND=true");
+  process.exit(1);
+}
 const allowedRecipients = (process.env.ALLOWED_RECIPIENTS ?? "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
@@ -64,23 +74,23 @@ const json = (value: unknown) => ({ content: [{ type: "text" as const, text: JSO
 const toolError = (message: string) => ({ isError: true, content: [{ type: "text" as const, text: message }] });
 
 function buildMcpServer(): McpServer {
-  const server = new McpServer({ name: "icloud-mail", version: "1.0.0" });
+  const server = new McpServer({ name: "postern", version: "1.0.0" });
   const readOnly = { readOnlyHint: true, openWorldHint: true };
 
   server.registerTool(
     "list_mailboxes",
     {
-      description: "List the iCloud Mail folders (mailbox paths) available to search.",
+      description: "List the mail folders (mailbox paths) available to search.",
       annotations: readOnly,
     },
-    async () => json(await listMailboxes(creds)),
+    async () => json(await listMailboxes(config)),
   );
 
   server.registerTool(
     "search_messages",
     {
       description:
-        "Search an iCloud Mail folder and return message summaries, newest first. Use the returned uid with get_message.",
+        "Search a mail folder and return message summaries, newest first. Use the returned uid with get_message.",
       inputSchema: {
         mailbox: z.string().default("INBOX").describe("Mailbox path from list_mailboxes"),
         from: z.string().optional().describe("Match sender address or name"),
@@ -94,7 +104,7 @@ function buildMcpServer(): McpServer {
       },
       annotations: readOnly,
     },
-    async (args) => json(await searchMessages(creds, args)),
+    async (args) => json(await searchMessages(config, args)),
   );
 
   server.registerTool(
@@ -109,7 +119,7 @@ function buildMcpServer(): McpServer {
       annotations: readOnly,
     },
     async ({ mailbox, uid, maxChars }) =>
-      json({ notice: UNTRUSTED_NOTICE, message: await getMessage(creds, mailbox, uid, maxChars) }),
+      json({ notice: UNTRUSTED_NOTICE, message: await getMessage(config, mailbox, uid, maxChars) }),
   );
 
   if (enableSend) {
@@ -118,7 +128,7 @@ function buildMcpServer(): McpServer {
     server.registerTool(
       "send_email",
       {
-        description: `Send a plain-text email from the iCloud account. To reply, pass the original messageId as inReplyTo and prefix the subject with "Re: ".${recipientsNote}`,
+        description: `Send a plain-text email as ${config.from}. To reply, pass the original messageId as inReplyTo and prefix the subject with "Re: ".${recipientsNote}`,
         inputSchema: {
           to: z.array(z.email()).min(1).max(20),
           cc: z.array(z.email()).max(20).optional(),
@@ -137,7 +147,7 @@ function buildMcpServer(): McpServer {
         const blocked = recipients.filter((r) => !isRecipientAllowed(r));
         if (blocked.length > 0) return toolError(`Recipients not allowed: ${blocked.join(", ")}`);
         if (!consumeSendQuota()) return toolError(`Send limit of ${maxSendsPerHour} emails per hour reached`);
-        return json(await sendEmail(creds, args));
+        return json(await sendEmail(config, args));
       },
     );
   }
@@ -168,7 +178,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (path === "/healthz" && req.method === "GET") return sendJson(res, 200, { ok: true });
   if (path !== "/mcp") return sendJson(res, 404, { error: "Not found" });
   if (!isAuthorized(req)) {
-    return sendJson(res, 401, { error: "Unauthorized" }, { "www-authenticate": 'Bearer realm="icloud-mail"' });
+    return sendJson(res, 401, { error: "Unauthorized" }, { "www-authenticate": 'Bearer realm="postern"' });
   }
   if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" }, { allow: "POST" });
 
@@ -204,7 +214,7 @@ const httpServer = createServer((req, res) => {
 
 httpServer.requestTimeout = 120_000;
 httpServer.listen(port, () => {
-  console.log(`icloud-mail MCP listening on :${port} (sending ${enableSend ? "enabled" : "disabled"})`);
+  console.log(`postern listening on :${port} for ${config.imapHost} (sending ${enableSend ? "enabled" : "disabled"})`);
 });
 
 process.on("SIGTERM", () => httpServer.close(() => process.exit(0)));

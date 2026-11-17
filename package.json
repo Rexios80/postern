@@ -1,8 +1,8 @@
 {
-  "name": "icloud-mail-mcp",
+  "name": "postern",
   "version": "1.0.0",
   "private": true,
-  "description": "Secure, self-hosted MCP server that gives Grok bots iCloud Mail access over HTTPS",
+  "description": "Secure, self-hosted MCP server that gives Grok bots IMAP/SMTP email access over HTTPS",
   "type": "module",
   "engines": {
     "node": ">=22.13"

@@ -2,11 +2,17 @@ import { ImapFlow, type SearchObject } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
 import nodemailer from "nodemailer";
 
-const IMAP_HOST = "imap.mail.me.com";
-const SMTP_HOST = "smtp.mail.me.com";
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 
-export type Credentials = { email: string; password: string };
+export type MailConfig = {
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  username: string;
+  password: string;
+  from: string;
+};
 
 type EnvelopeAddress = { name?: string; address?: string };
 
@@ -19,12 +25,12 @@ function formatParsedAddresses(value?: AddressObject | AddressObject[]): string[
   return objects.flatMap((o) => formatAddresses(o.value));
 }
 
-async function withImap<T>(creds: Credentials, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+async function withImap<T>(config: MailConfig, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   const client = new ImapFlow({
-    host: IMAP_HOST,
-    port: 993,
+    host: config.imapHost,
+    port: config.imapPort,
     secure: true,
-    auth: { user: creds.email, pass: creds.password },
+    auth: { user: config.username, pass: config.password },
     tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
     logger: false,
     disableAutoIdle: true,
@@ -43,13 +49,13 @@ async function withImap<T>(creds: Credentials, fn: (client: ImapFlow) => Promise
 function describeImapError(err: unknown): Error {
   const e = err as { authenticationFailed?: boolean; responseText?: string; message?: string };
   if (e.authenticationFailed) {
-    return new Error("iCloud rejected the login: check ICLOUD_EMAIL and the app-specific password");
+    return new Error("The mail server rejected the login: check MAIL_USERNAME and MAIL_PASSWORD");
   }
-  return new Error(e.responseText ? `iCloud IMAP error: ${e.responseText}` : (e.message ?? String(err)));
+  return new Error(e.responseText ? `IMAP error: ${e.responseText}` : (e.message ?? String(err)));
 }
 
-export async function listMailboxes(creds: Credentials) {
-  return withImap(creds, async (client) => {
+export async function listMailboxes(config: MailConfig) {
+  return withImap(config, async (client) => {
     const boxes = await client.list();
     return boxes.map((b) => ({ path: b.path, specialUse: b.specialUse ?? null }));
   });
@@ -67,8 +73,8 @@ export type SearchParams = {
   limit: number;
 };
 
-export async function searchMessages(creds: Credentials, params: SearchParams) {
-  return withImap(creds, async (client) => {
+export async function searchMessages(config: MailConfig, params: SearchParams) {
+  return withImap(config, async (client) => {
     const lock = await client.getMailboxLock(params.mailbox, { readOnly: true });
     try {
       const query: SearchObject = {};
@@ -110,8 +116,8 @@ export async function searchMessages(creds: Credentials, params: SearchParams) {
   });
 }
 
-export async function getMessage(creds: Credentials, mailbox: string, uid: number, maxChars: number) {
-  return withImap(creds, async (client) => {
+export async function getMessage(config: MailConfig, mailbox: string, uid: number, maxChars: number) {
+  return withImap(config, async (client) => {
     const lock = await client.getMailboxLock(mailbox, { readOnly: true });
     try {
       const msg = await client.fetchOne(
@@ -157,20 +163,20 @@ export type SendParams = {
   inReplyTo?: string;
 };
 
-export async function sendEmail(creds: Credentials, params: SendParams) {
+export async function sendEmail(config: MailConfig, params: SendParams) {
   const transport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: 587,
-    secure: false,
+    host: config.smtpHost,
+    port: config.smtpPort,
+    secure: config.smtpPort === 465,
     requireTLS: true,
-    auth: { user: creds.email, pass: creds.password },
+    auth: { user: config.username, pass: config.password },
     tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
     connectionTimeout: 30_000,
     socketTimeout: 60_000,
   });
   try {
     const info = await transport.sendMail({
-      from: creds.email,
+      from: config.from,
       to: params.to,
       cc: params.cc,
       bcc: params.bcc,
