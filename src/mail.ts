@@ -10,8 +10,8 @@ export type MailConfig = {
   password: string;
 };
 
-export type MessageRef = { mailbox: string; uid: number };
-export type AttachmentRef = MessageRef & { index: number };
+type MessageRef = { mailbox: string; uid: number };
+type AttachmentRef = MessageRef & { index: number };
 
 const TLS = { minVersion: "TLSv1.2", rejectUnauthorized: true } as const;
 const MESSAGE_ID = /^<[^<>\s]+>$/;
@@ -60,7 +60,7 @@ export function listMailboxes(config: MailConfig) {
   );
 }
 
-export type SearchParams = {
+type SearchParams = {
   mailbox: string;
   from?: string;
   to?: string;
@@ -161,9 +161,9 @@ export function getAttachment(config: MailConfig, { mailbox, uid, index }: Attac
   });
 }
 
-export type NewAttachment = { filename: string; content: string; encoding: "utf8" | "base64"; contentType?: string };
+type NewAttachment = { filename: string; content: string; encoding: "utf8" | "base64"; contentType?: string };
 
-export type SendParams = {
+type SendParams = {
   from?: string;
   fromName?: string;
   to: string[];

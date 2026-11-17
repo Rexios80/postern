@@ -62,7 +62,6 @@ cat <<EOF
 
 Project: $PROJECT_ID
 MCP endpoint: $URL/mcp
-Copy the token into your bot's secrets:
-  gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID \\
-    | npx --yes "@grok/agent-sdk@0.6.0" secret set <agent-name> POSTERN_TOKEN
+Copy the token to your clipboard, then add it as an "Authorization: Bearer <token>" header (see README):
+  gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID | pbcopy
 EOF

@@ -1,6 +1,6 @@
 # Postern
 
-A small, self-hosted [MCP](https://modelcontextprotocol.io) server that gives Grok bots (or any MCP client) email access over HTTPS. Use it when the bot's VM can't open IMAP/SMTP ports.
+A small, self-hosted [MCP](https://modelcontextprotocol.io) server that gives Grok Bot (or any MCP client) email access over HTTPS. Use it when the bot's VM can't open IMAP/SMTP ports.
 
 ```
 bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP over TLS──▶ your mail provider
@@ -55,30 +55,30 @@ To use an existing project instead, set `PROJECT_ID`. To remove everything, dele
 
 To serve another mailbox, deploy again with a different `SERVICE` name (default `postern`).
 
-## Connect a Grok bot
+## Connect Grok Bot
 
-Add `bot/mcp-connections/postern.ts`:
+Copy the token to your clipboard:
 
-```ts
-import { defineConnection } from "@grok/agent-sdk/connections";
-
-export default defineConnection({
-  url: "https://<your-service-url>/mcp",
-  headers: { authorization: "Bearer ${POSTERN_TOKEN}" },
-  advertiseTools: true,
-});
+```bash
+gcloud secrets versions access latest --secret postern-token --project $(cat .project-postern) | pbcopy
 ```
 
-In `bot/agent.ts`, add the service host to `hosting.egressDomains` and `POSTERN_TOKEN` to `hosting.secretNames`. Set the secret with the command `deploy.sh` prints, then redeploy the bot.
+In the Grok Bot app, open **Connect apps** and choose **Add a custom connector**:
 
-Other MCP clients: use Streamable HTTP at `/mcp` with an `Authorization: Bearer <token>` header.
+- **Type:** Remote HTTPS
+- **Server URL:** the MCP endpoint `deploy.sh` prints
+- **Header:** `Authorization: Bearer <token>`
+
+Then type `@` in a bot's chat to attach Postern. Don't paste the token into the chat.
+
+Other MCP clients: use Streamable HTTP at `/mcp` with the same `Authorization` header.
 
 ## Rotate credentials
 
 ```bash
 P=$(cat .project-postern)
 
-# New bot token, then update the bot's secret
+# New bot token, then update the connector's header
 openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add postern-token --data-file=- --project $P
 
 # New mail password
