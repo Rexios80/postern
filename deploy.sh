@@ -36,9 +36,12 @@ gcloud iam service-accounts describe "$SA" "${G[@]}" >/dev/null 2>&1 ||
   gcloud iam service-accounts create "$SERVICE" "${G[@]}"
 
 # Secret values go through stdin so they never appear in argv or shell history.
-if ! gcloud secrets describe "$SERVICE-mail-password" "${G[@]}" >/dev/null 2>&1; then
-  read -rsp "Mail app password: " password; echo
-  printf '%s' "$password" | gcloud secrets create "$SERVICE-mail-password" --data-file=- "${G[@]}"
+if ! gcloud secrets versions describe latest --secret "$SERVICE-mail-password" "${G[@]}" >/dev/null 2>&1; then
+  password=""
+  while [[ -z "$password" ]]; do read -rsp "Mail app password: " password; echo; done
+  gcloud secrets describe "$SERVICE-mail-password" "${G[@]}" >/dev/null 2>&1 ||
+    gcloud secrets create "$SERVICE-mail-password" "${G[@]}"
+  printf '%s' "$password" | gcloud secrets versions add "$SERVICE-mail-password" --data-file=- "${G[@]}"
 fi
 if ! gcloud secrets describe "$SERVICE-token" "${G[@]}" >/dev/null 2>&1; then
   openssl rand -hex 32 | tr -d '\n' | gcloud secrets create "$SERVICE-token" --data-file=- "${G[@]}"
