@@ -12,8 +12,11 @@ bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP ove
 | --- | --- |
 | `list_mailboxes` | Lists folders |
 | `search_messages` | Searches a folder by sender, recipient, subject, text, date or unread status |
-| `get_message` | Reads one message as plain text, with attachment names and sizes |
-| `send_email` | Sends plain-text mail and replies. Only available when `SMTP_HOST` is set |
+| `get_message` | Reads one message as plain text and lists its attachments |
+| `get_attachment` | Downloads an attachment: images as images, text as text, other files as base64 |
+| `send_email` | Sends plain-text mail and replies, optionally from an alias with a display name. Attachments can be new files or attachments of existing emails, which are forwarded without passing through the bot. Only available when `SMTP_HOST` is set |
+
+Messages larger than 40 MB can't be read, and requests to Postern are limited to 25 MB, which caps new attachments at about 18 MB once base64-encoded. Most providers only let you send from addresses the account owns.
 
 ## Security
 
@@ -21,7 +24,8 @@ bot ──HTTPS + bearer token──▶ Postern on Cloud Run ──IMAP/SMTP ove
 - Folders are opened read-only: reading never marks messages as read, moves or deletes anything.
 - The mail servers are fixed at deploy time, and connections require TLS 1.2+ with certificate checks.
 - Sending is only enabled when `SMTP_HOST` is set. A bot that can read and send can be tricked by a malicious email into forwarding your mail, so leave it out unless the bot needs to send.
-- Every sent email is logged with its recipients and Message-ID. Review them with `gcloud run services logs read postern --region us-central1`.
+- Attachments can only come from the request itself or from emails in the mailbox. Postern never reads files or URLs.
+- Every sent email is logged with its sender, recipients, attachment count and Message-ID. Review them with `gcloud run services logs read postern --region us-central1`.
 - The service runs as its own service account, which can read only its two secrets, in a distroless non-root container with at most one instance.
 
 ## Providers

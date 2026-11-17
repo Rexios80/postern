@@ -94,13 +94,22 @@ export function searchMessages(config: MailConfig, { mailbox, unreadOnly, limit,
 }
 
 const MAX_TEXT_CHARS = 20_000;
+const MAX_MESSAGE_BYTES = 40 * 1024 * 1024;
+
+async function readMessage(client: ImapFlow, mailbox: string, uid: number) {
+  const msg = await client.fetchOne(
+    String(uid),
+    { size: true, source: { maxLength: MAX_MESSAGE_BYTES } },
+    { uid: true },
+  );
+  if (!msg || !msg.source) throw new Error(`No message with UID ${uid} in ${mailbox}`);
+  if ((msg.size ?? 0) > MAX_MESSAGE_BYTES) throw new Error("Message is larger than 40 MB");
+  return simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
+}
 
 export function getMessage(config: MailConfig, mailbox: string, uid: number) {
   return withMailbox(config, mailbox, async (client) => {
-    const msg = await client.fetchOne(String(uid), { source: { maxLength: 10 * 1024 * 1024 } }, { uid: true });
-    if (!msg || !msg.source) throw new Error(`No message with UID ${uid} in ${mailbox}`);
-
-    const parsed = await simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
+    const parsed = await readMessage(client, mailbox, uid);
     const text = parsed.text ?? "";
     return {
       messageId: parsed.messageId ?? null,
@@ -111,14 +120,53 @@ export function getMessage(config: MailConfig, mailbox: string, uid: number) {
       subject: parsed.subject ?? "",
       text: text.slice(0, MAX_TEXT_CHARS),
       textTruncated: text.length > MAX_TEXT_CHARS,
-      attachments: parsed.attachments.map((a) => ({ filename: a.filename ?? null, sizeBytes: a.size })),
+      attachments: parsed.attachments.map((a, index) => ({
+        index,
+        filename: a.filename ?? null,
+        contentType: a.contentType,
+        sizeBytes: a.size,
+      })),
     };
   });
 }
 
-export type SendParams = { to: string[]; cc?: string[]; subject: string; text: string; inReplyTo?: string };
+export type AttachmentRef = { mailbox: string; uid: number; index: number };
+
+export function getAttachment(config: MailConfig, { mailbox, uid, index }: AttachmentRef) {
+  return withMailbox(config, mailbox, async (client) => {
+    const attachment = (await readMessage(client, mailbox, uid)).attachments[index];
+    if (!attachment) throw new Error(`Message ${uid} in ${mailbox} has no attachment ${index}`);
+    return {
+      filename: attachment.filename ?? `attachment-${index}`,
+      contentType: attachment.contentType,
+      content: attachment.content,
+    };
+  });
+}
+
+export type NewAttachment = { filename: string; content: string; encoding: "utf8" | "base64"; contentType?: string };
+
+export type SendParams = {
+  from?: string;
+  fromName?: string;
+  to: string[];
+  cc?: string[];
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  attachments?: (NewAttachment | AttachmentRef)[];
+};
 
 export async function sendEmail(config: MailConfig, params: SendParams) {
+  const attachments = [];
+  for (const a of params.attachments ?? []) {
+    attachments.push(
+      "content" in a
+        ? { filename: a.filename, content: Buffer.from(a.content, a.encoding), contentType: a.contentType }
+        : await getAttachment(config, a),
+    );
+  }
+
   const transport = nodemailer.createTransport({
     host: config.smtpHost,
     port: config.smtpPort,
@@ -129,13 +177,14 @@ export async function sendEmail(config: MailConfig, params: SendParams) {
   });
   try {
     const info = await transport.sendMail({
-      from: config.username,
+      from: { name: params.fromName ?? "", address: params.from ?? config.username },
       to: params.to,
       cc: params.cc,
       subject: params.subject,
       text: params.text,
       inReplyTo: params.inReplyTo,
       references: params.inReplyTo,
+      attachments,
       disableFileAccess: true,
       disableUrlAccess: true,
     });

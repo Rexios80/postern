@@ -35,7 +35,7 @@ for secret in "$SERVICE-mail-password" "$SERVICE-token"; do
 done
 
 gcloud run deploy "$SERVICE" --source "$(dirname "$0")" --region "$REGION" \
-  --service-account "$SA" --allow-unauthenticated --max-instances 1 \
+  --service-account "$SA" --allow-unauthenticated --max-instances 1 --memory 1Gi \
   --set-secrets "MAIL_PASSWORD=$SERVICE-mail-password:latest,MCP_BEARER_TOKEN=$SERVICE-token:latest" \
   --set-env-vars "IMAP_HOST=$IMAP_HOST,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,MAIL_USERNAME=$MAIL_USERNAME" \
   "${G[@]}"
