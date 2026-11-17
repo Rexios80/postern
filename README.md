@@ -63,13 +63,17 @@ Copy the token to your clipboard:
 gcloud secrets versions access latest --secret postern-token --project $(cat .project-postern) | pbcopy
 ```
 
-In the Grok Bot app, open **Connect apps** and choose **Add a custom connector**:
+In the Grok Bot app, open **Connect apps**, choose **Add a custom connector**, and fill in:
 
-- **Type:** Remote HTTPS
-- **Server URL:** the MCP endpoint `deploy.sh` prints
-- **Header:** `Authorization: Bearer <token>`
+| Field | Value |
+| --- | --- |
+| Name | `Postern` |
+| Type | Remote HTTPS |
+| Server URL | the MCP endpoint `deploy.sh` prints, ending in `/mcp` |
+| HTTP headers | Key `Authorization`, value `Bearer ` followed by the token |
+| Client ID | leave empty |
 
-Then type `@` in a bot's chat to attach Postern. Don't paste the token into the chat.
+Click **Add plugin**, then type `@` in a bot's chat to attach Postern. Don't paste the token into the chat.
 
 Other MCP clients: use Streamable HTTP at `/mcp` with the same `Authorization` header.
 

@@ -62,6 +62,7 @@ cat <<EOF
 
 Project: $PROJECT_ID
 MCP endpoint: $URL/mcp
-Copy the token to your clipboard, then add it as an "Authorization: Bearer <token>" header (see README):
+Add a Remote HTTPS custom connector with that Server URL and the HTTP header
+Authorization = Bearer <token> (see README). Copy the token with:
   gcloud secrets versions access latest --secret $SERVICE-token --project $PROJECT_ID | pbcopy
 EOF
