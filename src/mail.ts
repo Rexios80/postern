@@ -130,8 +130,14 @@ export async function sendEmail(config: MailConfig, params: SendParams) {
   try {
     const info = await transport.sendMail({
       from: config.username,
-      ...params,
+      to: params.to,
+      cc: params.cc,
+      subject: params.subject,
+      text: params.text,
+      inReplyTo: params.inReplyTo,
       references: params.inReplyTo,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
     return { messageId: info.messageId, accepted: info.accepted, rejected: info.rejected };
   } finally {
