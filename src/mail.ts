@@ -1,6 +1,7 @@
 import { ImapFlow, type SearchObject } from "imapflow";
-import { simpleParser, type AddressObject } from "mailparser";
+import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
 import nodemailer from "nodemailer";
+import { htmlToPlainText } from "./html-text.js";
 
 export type MailConfig = {
   imapHost: string;
@@ -99,6 +100,48 @@ export function searchMessages(config: MailConfig, { mailbox, unreadOnly, limit,
 
 const MAX_TEXT_CHARS = 20_000;
 const MAX_MESSAGE_BYTES = 40 * 1024 * 1024;
+const PARSER_OPTIONS = { skipImageLinks: true, skipTextLinks: true };
+
+function parseSource(source: Buffer) {
+  return simpleParser(source, PARSER_OPTIONS);
+}
+
+// simpleParser fills `text` from text/plain parts, and converts HTML only when the
+// text/html part is the root of the message. Nested HTML (multipart/alternative,
+// related, or mixed) otherwise leaves `text` empty while `html` holds the body.
+function extractText(parsed: ParsedMail): { text: string; textError?: string } {
+  const plain = typeof parsed.text === "string" ? parsed.text : "";
+  if (plain.trim()) return { text: plain };
+  if (parsed.textConversionError) return { text: "", textError: parsed.textConversionError.message };
+  const html = typeof parsed.html === "string" ? parsed.html : "";
+  if (!html.trim()) return { text: plain };
+  return htmlToPlainText(html);
+}
+
+function formatMessage(parsed: ParsedMail) {
+  const { text, textError } = extractText(parsed);
+  return {
+    date: parsed.date ?? null,
+    from: formatParsed(parsed.from),
+    to: formatParsed(parsed.to),
+    cc: formatParsed(parsed.cc),
+    replyTo: formatParsed(parsed.replyTo),
+    subject: parsed.subject ?? "",
+    text: text.slice(0, MAX_TEXT_CHARS),
+    textTruncated: text.length > MAX_TEXT_CHARS,
+    ...(textError ? { textError } : {}),
+    attachments: parsed.attachments.map((a, index) => ({
+      index,
+      filename: a.filename ?? null,
+      contentType: a.contentType,
+      sizeBytes: a.size,
+    })),
+  };
+}
+
+export async function parseMessage(source: Buffer) {
+  return formatMessage(await parseSource(source));
+}
 
 async function readMessage(client: ImapFlow, mailbox: string, uid: number) {
   const msg = await client.fetchOne(
@@ -108,30 +151,11 @@ async function readMessage(client: ImapFlow, mailbox: string, uid: number) {
   );
   if (!msg || !msg.source) throw new Error(`No message with UID ${uid} in ${mailbox}`);
   if ((msg.size ?? 0) > MAX_MESSAGE_BYTES) throw new Error("Message is larger than 40 MB");
-  return simpleParser(msg.source, { skipImageLinks: true, skipTextLinks: true });
+  return parseSource(msg.source);
 }
 
 export function getMessage(config: MailConfig, { mailbox, uid }: MessageRef) {
-  return withMailbox(config, mailbox, async (client) => {
-    const parsed = await readMessage(client, mailbox, uid);
-    const text = parsed.text ?? "";
-    return {
-      date: parsed.date ?? null,
-      from: formatParsed(parsed.from),
-      to: formatParsed(parsed.to),
-      cc: formatParsed(parsed.cc),
-      replyTo: formatParsed(parsed.replyTo),
-      subject: parsed.subject ?? "",
-      text: text.slice(0, MAX_TEXT_CHARS),
-      textTruncated: text.length > MAX_TEXT_CHARS,
-      attachments: parsed.attachments.map((a, index) => ({
-        index,
-        filename: a.filename ?? null,
-        contentType: a.contentType,
-        sizeBytes: a.size,
-      })),
-    };
-  });
+  return withMailbox(config, mailbox, async (client) => formatMessage(await readMessage(client, mailbox, uid)));
 }
 
 function getThread(config: MailConfig, { mailbox, uid }: MessageRef) {

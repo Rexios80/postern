@@ -72,7 +72,7 @@ function buildMcpServer(): McpServer {
   server.registerTool(
     "get_message",
     {
-      description: `Read one message as plain text without marking it read, with an index for each attachment. ${UNTRUSTED}`,
+      description: `Read one message as plain text without marking it read, with an index for each attachment. HTML mail is converted to text and link URLs are kept. If a body exists but cannot be read, text is empty and textError says why. ${UNTRUSTED}`,
       inputSchema: messageRef,
       annotations: readOnly,
     },
